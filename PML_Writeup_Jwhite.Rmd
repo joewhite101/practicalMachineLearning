@@ -36,7 +36,7 @@ testing <- activity[-inTrain,]
 ###Training
 The selected model is a Random Forest. Other models were tested including glm and treebag but the results were similar and space considerations prevent reviewing all of the examined models.
 
-The section on Parameter Exploration below examines engineering the parameters to select a different parameter set. The model that was used included all of the data as predictors. In order to use all of the predictors the data is parallelized across 12 CPU cores prior to training.
+The section on Parameter Exploration below examines engineering the parameters to select a different parameter set. The model that was used included all of the data as predictors. In order to use all of the predictors the data is parallelized across 12 CPU cores prior to training. This was run on a 16 core machine with 64gb or rame for illustrative purposes. A superior model that runs on a laptop is reviewed below in the Parameter Exploration section.
 
 ```{r eval=FALSE}
 
@@ -57,8 +57,6 @@ finalModel <-readRDS("finalModel.rds")
 
 ```{r}
 rfMod
-
-
 ```
 
 ###Cross Validation
@@ -84,33 +82,45 @@ One option is to remove variables that are either closely related or that are ex
 
 
 ```{r eval=FALSE}
+updated <-training
 updated<-updated[,-grep("kurtosis",colnames(updated))]
 updated<-updated[,-grep("max",colnames(updated))]
 updated<-updated[,-grep("min",colnames(updated))]
 updated<-updated[,-grep("skewness",colnames(updated))]
 updated<-updated[,-grep("var",colnames(updated))]
 updated<-updated[,-grep("gyros",colnames(updated))]
-newModel <- train(classe ~.,data=updated, method="rf", ntree=200 )
+```
+
+The best performing model from a computational standpoin on the test set includes updating the random forest to use a different sampling method which speeds up the execution time along with not saving the returned data to save disk space. The cv method uses cross validated sampling in generating the random forest.
+
+```{r eval=FALSE}
+ctrl <-trainControl(method="cv", number=5)
+newModel <- train(classe ~.,data=updated, method="rf", ntree=200,trainControl=ctrl, returnData=FALSE, returnResamp="none", savePredictions=FALSE )
+
 ```
 
 ```{r echo=FALSE}
-newModel <- readRDS("newMod.rds")
+##Read the model from a file to save execution time in building report.
+newModel <- readRDS("newModel.rds")
 ```
 
-The updated model has an accuracy rate 99.91% of and an OOB estimated error of 0.05% which are both superior to the model with all variables included:
+The updated model has an accuracy rate 99.83% of and an OOB estimated error of 0.05% which are both superior to the model with all predictor variables included:
 ```{r}
 newModel
 newModel$finalModel
 ```
 
 
-Finally a prediction is generated with the updated model using the smaller parameter set:
+Finally a Cross Validation prediction is generated with the updated model using the smaller parameter set:
 
 ```{r}
 
 newPred <- predict(newModel,testing)
 table(newPred,testing$classe)
 ```
+
+As the table above shows the cross validated test on the new model has a success rate of 99.93%.
+
 ###References
 [1] Human Activity Recognition Data Set - http://groupware.les.inf.puc-rio.br/har
 [2] Performance Modeling tips - https://class.coursera.org/predmachlearn-031/forum/thread?thread_id=12
