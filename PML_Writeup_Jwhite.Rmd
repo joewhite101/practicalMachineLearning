@@ -1,0 +1,116 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Joe White"
+date: "August 22, 2015"
+output: html_document
+---
+
+###Executive Summary
+This report examines activity data for Human Activity Recognition project [1] and develops a Random Forest model to predict the type of activity being performed based on data captured from wearable devices. The accuracy of the captured model and an estimation of the error inherent in the model is provided below.
+
+
+###Data Processing and Setup
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(caret)
+library(ggplot2)
+library(doParallel)
+library(parallel)
+```
+The first step with the data is to pre process the data and to remove invalid information. In this case there are blanks, NA, and divide by zero errors in the data set. All of those values are replaced with 0 when the data set is read in. This allows the model to accurately predict outcomes using consistently formatted input data. Finally, the row name column is removed.
+
+```{r echo=FALSE}
+activity<-read.csv("pml-training.csv", na.strings = c("", "#DIV/0!","NA"))
+activity[is.na(activity)]<-0
+activity <- activity[,-1]
+```
+
+Then the training data is partitioned into a training and test set. In this case 70% of the data will be used for training and 30% will be used for cross-validation.
+```{r}
+inTrain <- createDataPartition(y=activity$classe,p=0.7, list=FALSE)
+training <- activity[inTrain,]
+testing <- activity[-inTrain,]
+```
+
+###Training
+The selected model is a Random Forest. Other models were tested including glm and treebag but the results were similar and space considerations prevent reviewing all of the examined models.
+
+The section on Parameter Exploration below examines engineering the parameters to select a different parameter set. The model that was used included all of the data as predictors. In order to use all of the predictors the data is parallelized across 12 CPU cores prior to training.
+
+```{r eval=FALSE}
+
+cl <- makeCluster(12)
+registerDoParallel(cl)
+rfMod <- train(classe ~ ., method="rf", data=training, ntree=200)
+stopCluster(cl)
+
+```
+
+The table below below shows the results of the training run. The final model reports accuracy of 99.85% with a standard deviation of 0.05%. 
+
+```{r echo=FALSE}
+
+rfMod <- readRDS("rfMod.rds")
+finalModel <-readRDS("finalModel.rds")
+```
+
+```{r}
+rfMod
+
+
+```
+
+###Cross Validation
+The next step is to use the training set created earlier to cross validate the result and the error rate reported above. The predicted values for cross validation data set are run against the model with:
+
+```{r message=FALSE, warning=FALSE}
+
+pred <- predict(rfMod,testing)
+table(pred,testing$classe)
+```
+
+As can be seen in the table the model accurately predicted 5883 results with 2 misclassifications. This is a success rate of 99.964% which is consistent with the success and error rates reported by the model.
+
+
+###Parameter Exploration
+Another aspect of this project is selecting an appropriate set of parameters to train the model. As can be seen in the figure below after around 90 parameters there is very little value in adding more. 
+
+```{r}
+plot(rfMod)
+```
+
+One option is to remove variables that are either closely related or that are extremely sparse. With that in mind the model below removes all variables related to standard deviation, variance, min, max, skewness, kurtosis, and gyros. Kurtosis is very sparse in the data set. Skewness and gyros are both tightly correlated to pitch and raw which remain in the data set. Variance standard deviation, min, and max are all encapsulated in the avg reported for each value (though not perfectly captured).
+
+
+```{r eval=FALSE}
+updated<-updated[,-grep("kurtosis",colnames(updated))]
+updated<-updated[,-grep("max",colnames(updated))]
+updated<-updated[,-grep("min",colnames(updated))]
+updated<-updated[,-grep("skewness",colnames(updated))]
+updated<-updated[,-grep("var",colnames(updated))]
+updated<-updated[,-grep("gyros",colnames(updated))]
+newModel <- train(classe ~.,data=updated, method="rf", ntree=200 )
+```
+
+```{r echo=FALSE}
+newModel <- readRDS("newMod.rds")
+```
+
+The updated model has an accuracy rate 99.91% of and an OOB estimated error of 0.05% which are both superior to the model with all variables included:
+```{r}
+newModel
+newModel$finalModel
+```
+
+
+Finally a prediction is generated with the updated model using the smaller parameter set:
+
+```{r}
+
+newPred <- predict(newModel,testing)
+table(newPred,testing$classe)
+```
+###References
+[1] Human Activity Recognition Data Set - http://groupware.les.inf.puc-rio.br/har
+[2] Performance Modeling tips - https://class.coursera.org/predmachlearn-031/forum/thread?thread_id=12
